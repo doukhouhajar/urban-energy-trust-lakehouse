@@ -1,11 +1,7 @@
-# Urban Energy Trust Lakehouse Configuration
-
-# Paths
 paths:
   raw_data_root: "data/raw"
   lakehouse_root: "data/lakehouse"
   
-  # Raw data paths
   smart_meters:
     household_info: "data/raw/kaggle_smart_meters_london/informations_households.csv"
     acorn_details: "data/raw/kaggle_smart_meters_london/acorn_details.csv"
@@ -19,16 +15,13 @@ paths:
     gadm_gpkg: "data/raw/gadm/gadm41_GBR.gpkg"
     osm_pbf: "data/raw/osm/united-kingdom-260108.osm.pbf"
   
-  # Lakehouse paths
   bronze_root: "data/lakehouse/bronze"
   silver_root: "data/lakehouse/silver"
   gold_root: "data/lakehouse/gold"
   
-  # Streaming paths
   streaming_source: "data/streaming_source"
   streaming_checkpoint: "data/streaming_checkpoint"
 
-# Table names
 tables:
   bronze:
     halfhourly_consumption: "bronze.halfhourly_consumption"
@@ -59,7 +52,6 @@ tables:
     building_aggregations: "gold.building_aggregations"
     audit_log: "gold.audit_log"
 
-# Data Quality Thresholds
 quality:
   completeness:
     daily_missing_threshold: 0.10  # 10% missing per day triggers alert
@@ -84,28 +76,24 @@ quality:
     temporal_coherence_weight: 0.25
     business_rules_weight: 0.20
     schema_validity_weight: 0.15
-    low_quality_threshold: 70.0  # Score < 70 is "low quality"
+    low_quality_threshold: 70.0  
 
-# ML Model Configuration
 ml:
   quality_risk:
-    target_window_days: 1  # Predict next day quality risk
-    low_quality_threshold: 70.0  # Quality score threshold for "at risk"
-    high_incident_threshold: 5  # Incident count threshold
+    target_window_days: 1  
+    low_quality_threshold: 70.0  
+    high_incident_threshold: 5  
     
-    # Feature engineering
     feature_windows:
       missing_rate_days: [7, 30]
       incident_days: [7, 30]
       volatility_days: [7, 30]
       weather_days: [7, 30]
     
-    # Model parameters
     model_type: "lightgbm"  # lightgbm, xgboost, logistic_regression
     train_test_split: 0.8
     random_state: 42
     
-    # LightGBM parameters
     lightgbm_params:
       objective: "binary"
       metric: "auc"
@@ -117,22 +105,18 @@ ml:
       bagging_freq: 5
       verbose: 0
     
-    # Model storage
     model_path: "models/quality_risk_model"
     model_version_prefix: "v"
 
-# Spark Configuration
 spark:
   app_name: "UrbanEnergyLakehouse"
-  master: "spark://spark-master:7077"  # Docker: use "spark://spark-master:7077", Local: use "local[*]"
-  local: "local[*]"  # For local runs
+  master: "spark://spark-master:7077"  
+  local: "local[*]"  
   
-  # Delta Lake configuration
   delta:
     auto_optimize: true
     auto_compact: true
   
-  # Spark settings
   config:
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
@@ -145,14 +129,12 @@ spark:
     spark.sedona.spark.version: "3.0"
     spark.kryo.registrator: "org.apache.sedona.viz.core.Serde.SedonaVizKryoRegistrator"
 
-# Streaming Configuration
 streaming:
   trigger_interval: "30 seconds"
   checkpoint_location: "data/streaming_checkpoint"
   max_files_per_trigger: 100
   processing_time: "30 seconds"
 
-# Geospatial Configuration
 geospatial:
   gadm:
     crs: "EPSG:4326"
@@ -162,9 +144,8 @@ geospatial:
   osm:
     crs: "EPSG:4326"
     building_tags: ["building", "landuse", "amenity", "type"]
-    min_building_area: 0.0  # m², filter very small buildings
+    min_building_area: 0.0  # m²
 
-# Governance
 governance:
   audit_log:
     enabled: true

@@ -1,31 +1,15 @@
-# Python
 __pycache__/
-*.py[cod]
-*$py.class
 *.so
 .Python
-venv/
 env/
-ENV/
-*.egg-info/
 dist/
 build/
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Jupyter
 .ipynb_checkpoints/
 
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# Data
 data/raw/
 data/lakehouse/
 data/streaming_checkpoint/
@@ -33,26 +17,16 @@ data/streaming_source/
 *.parquet
 *.delta
 
-# Models
 models/
 *.pkl
 *.joblib
 
-# Logs
 *.log
 logs/
 
-# OS
 .DS_Store
 Thumbs.db
 
-# Spark
 spark-warehouse/
 metastore_db/
 
-# Docker
-.dockerignore
-
-# Environment
-.env
-.env.local
