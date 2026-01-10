@@ -1,0 +1,179 @@
+# Urban Energy Trust Lakehouse Configuration
+
+# Paths
+paths:
+  raw_data_root: "data/raw"
+  lakehouse_root: "data/lakehouse"
+  
+  # Raw data paths
+  smart_meters:
+    household_info: "data/raw/kaggle_smart_meters_london/informations_households.csv"
+    acorn_details: "data/raw/kaggle_smart_meters_london/acorn_details.csv"
+    halfhourly_dir: "data/raw/kaggle_smart_meters_london/halfhourly_dataset/halfhourly_dataset"
+    daily_dir: "data/raw/kaggle_smart_meters_london/daily_dataset/daily_dataset"
+    weather_hourly: "data/raw/kaggle_smart_meters_london/weather_hourly_darksky.csv"
+    weather_daily: "data/raw/kaggle_smart_meters_london/weather_daily_darksky.csv"
+    bank_holidays: "data/raw/kaggle_smart_meters_london/uk_bank_holidays.csv"
+  
+  geospatial:
+    gadm_gpkg: "data/raw/gadm/gadm41_GBR.gpkg"
+    osm_pbf: "data/raw/osm/united-kingdom-260108.osm.pbf"
+  
+  # Lakehouse paths
+  bronze_root: "data/lakehouse/bronze"
+  silver_root: "data/lakehouse/silver"
+  gold_root: "data/lakehouse/gold"
+  
+  # Streaming paths
+  streaming_source: "data/streaming_source"
+  streaming_checkpoint: "data/streaming_checkpoint"
+
+# Table names
+tables:
+  bronze:
+    halfhourly_consumption: "bronze.halfhourly_consumption"
+    daily_consumption: "bronze.daily_consumption"
+    household_info: "bronze.household_info"
+    acorn_details: "bronze.acorn_details"
+    weather_hourly: "bronze.weather_hourly"
+    weather_daily: "bronze.weather_daily"
+    bank_holidays: "bronze.bank_holidays"
+    gadm_level2: "bronze.gadm_level2"
+    gadm_level3: "bronze.gadm_level3"
+    osm_buildings: "bronze.osm_buildings"
+  
+  silver:
+    halfhourly_consumption: "silver.halfhourly_consumption"
+    daily_consumption: "silver.daily_consumption"
+    household_enriched: "silver.household_enriched"
+    weather_enriched: "silver.weather_enriched"
+  
+  gold:
+    consumption_analytics: "gold.consumption_analytics"
+    quality_scores: "gold.quality_scores"
+    quality_incidents: "gold.quality_incidents"
+    quality_risk_predictions: "gold.quality_risk_predictions"
+    gadm_level2: "gold.gadm_level2"
+    gadm_level3: "gold.gadm_level3"
+    osm_buildings: "gold.osm_buildings"
+    building_aggregations: "gold.building_aggregations"
+    audit_log: "gold.audit_log"
+
+# Data Quality Thresholds
+quality:
+  completeness:
+    daily_missing_threshold: 0.10  # 10% missing per day triggers alert
+    weekly_missing_threshold: 0.25  # 25% missing per week triggers alert
+  
+  temporal_coherence:
+    anomaly_threshold: 0.05  # 5% temporal anomalies triggers alert
+    expected_interval_minutes: 30  # Half-hourly data
+  
+  business_rules:
+    min_consumption: 0.0  # Negative consumption invalid
+    max_consumption: 50.0  # kWh/hh absolute cap
+    z_score_threshold: 5.0  # Extreme spikes detection
+  
+  schema:
+    allowed_tariffs: ["Std", "ToU"]
+    allowed_acorn_groups: ["Affluent", "Comfortable", "Adversity", "ACORN-"]
+    energy_range: [0.0, 100.0]  # kWh/hh
+  
+  scoring:
+    completeness_weight: 0.40
+    temporal_coherence_weight: 0.25
+    business_rules_weight: 0.20
+    schema_validity_weight: 0.15
+    low_quality_threshold: 70.0  # Score < 70 is "low quality"
+
+# ML Model Configuration
+ml:
+  quality_risk:
+    target_window_days: 1  # Predict next day quality risk
+    low_quality_threshold: 70.0  # Quality score threshold for "at risk"
+    high_incident_threshold: 5  # Incident count threshold
+    
+    # Feature engineering
+    feature_windows:
+      missing_rate_days: [7, 30]
+      incident_days: [7, 30]
+      volatility_days: [7, 30]
+      weather_days: [7, 30]
+    
+    # Model parameters
+    model_type: "lightgbm"  # lightgbm, xgboost, logistic_regression
+    train_test_split: 0.8
+    random_state: 42
+    
+    # LightGBM parameters
+    lightgbm_params:
+      objective: "binary"
+      metric: "auc"
+      boosting_type: "gbdt"
+      num_leaves: 31
+      learning_rate: 0.05
+      feature_fraction: 0.9
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      verbose: 0
+    
+    # Model storage
+    model_path: "models/quality_risk_model"
+    model_version_prefix: "v"
+
+# Spark Configuration
+spark:
+  app_name: "UrbanEnergyLakehouse"
+  master: "spark://spark-master:7077"  # Docker: use "spark://spark-master:7077", Local: use "local[*]"
+  local: "local[*]"  # For local runs
+  
+  # Delta Lake configuration
+  delta:
+    auto_optimize: true
+    auto_compact: true
+  
+  # Spark settings
+  config:
+    spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
+    spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+    spark.databricks.delta.retentionDurationCheck.enabled: "false"
+    spark.sql.adaptive.enabled: "true"
+    spark.sql.adaptive.coalescePartitions.enabled: "true"
+    spark.serializer: "org.apache.spark.serializer.KryoSerializer"
+    spark.sql.warehouse.dir: "/tmp/spark-warehouse"
+    spark.jars.packages: "io.delta:delta-spark_2.12:3.0.0,org.apache.sedona:sedona-spark-shaded-3.0_2.12:1.5.1,org.datasyslab:geotools-wrapper:1.4.0-28.2"
+    spark.sedona.spark.version: "3.0"
+    spark.kryo.registrator: "org.apache.sedona.viz.core.Serde.SedonaVizKryoRegistrator"
+
+# Streaming Configuration
+streaming:
+  trigger_interval: "30 seconds"
+  checkpoint_location: "data/streaming_checkpoint"
+  max_files_per_trigger: 100
+  processing_time: "30 seconds"
+
+# Geospatial Configuration
+geospatial:
+  gadm:
+    crs: "EPSG:4326"
+    level2_columns: ["GID_2", "NAME_2", "geometry"]
+    level3_columns: ["GID_3", "NAME_3", "NAME_2", "NAME_1", "NAME_0", "geometry"]
+  
+  osm:
+    crs: "EPSG:4326"
+    building_tags: ["building", "landuse", "amenity", "type"]
+    min_building_area: 0.0  # m², filter very small buildings
+
+# Governance
+governance:
+  audit_log:
+    enabled: true
+    retention_days: 365
+  
+  schema_evolution:
+    mode: "merge"  # merge, fail, overwrite
+    allow_additional_columns: true
+  
+  versioning:
+    history_retention_days: 30
+    optimize_retention_days: 7

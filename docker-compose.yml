@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  spark-master:
+    image: bitnami/spark:3.5
+    container_name: spark-master
+    hostname: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - "8080:8080"  # Spark UI
+      - "7077:7077"  # Spark Master port
+    volumes:
+      - ./data:/opt/bitnami/spark/data
+      - ./src:/opt/bitnami/spark/src
+      - ./config:/opt/bitnami/spark/config
+    networks:
+      - spark-network
+
+  spark-worker:
+    image: bitnami/spark:3.5
+    container_name: spark-worker
+    hostname: spark-worker
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - ./data:/opt/bitnami/spark/data
+      - ./src:/opt/bitnami/spark/src
+      - ./config:/opt/bitnami/spark/config
+    networks:
+      - spark-network
+
+  postgres:
+    image: postgres:15
+    container_name: postgres-metastore
+    environment:
+      - POSTGRES_DB=metastore_db
+      - POSTGRES_USER=hive
+      - POSTGRES_PASSWORD=hive
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - spark-network
+
+  hive-metastore:
+    image: apache/hive:3.1.3
+    container_name: hive-metastore
+    depends_on:
+      - postgres
+    environment:
+      - SERVICE_NAME=hivemetastore
+      - DB_DRIVER=postgres
+      - SERVICE_OPTS=-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/metastore_db -Djavax.jdo.option.ConnectionUserName=hive -Djavax.jdo.option.ConnectionPassword=hive
+    ports:
+      - "9083:9083"
+    volumes:
+      - ./data:/opt/hive/data
+    networks:
+      - spark-network
+    command: /opt/hive/bin/hive --service metastore
+
+  jupyter:
+    image: jupyter/pyspark-notebook:spark-3.5.0
+    container_name: jupyter-notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./data:/home/jovyan/data
+      - ./src:/home/jovyan/src
+      - ./config:/home/jovyan/config
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    networks:
+      - spark-network
+    command: start-notebook.sh --NotebookApp.token='' --NotebookApp.password=''
+
+volumes:
+  postgres-data:
+
+networks:
+  spark-network:
+    driver: bridge
