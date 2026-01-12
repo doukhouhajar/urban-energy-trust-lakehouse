@@ -1,5 +1,3 @@
-"""Custom Spark-based data quality checks"""
-
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
     col, when, isnan, isnull, count, sum as spark_sum,
@@ -19,13 +17,6 @@ def check_completeness(
     expected_interval_minutes: int = 30,
     missing_threshold: float = 0.10
 ) -> Tuple[DataFrame, DataFrame]:
-    """
-    Check completeness: missing rate per partition
-    
-    Returns:
-        Tuple of (completeness_metrics, incidents)
-    """
-    # Count records per partition
     completeness_df = df.groupBy(partition_cols + [date_trunc("day", col(timestamp_col)).alias("score_date")]) \
         .agg(
             count("*").alias("actual_records"),
@@ -34,7 +25,6 @@ def check_completeness(
             spark_max(col(timestamp_col)).alias("max_timestamp")
         )
     
-    # Calculate expected records per day (48 for half-hourly)
     records_per_day = int(24 * 60 / expected_interval_minutes)
     
     completeness_df = completeness_df.withColumn(
@@ -54,7 +44,6 @@ def check_completeness(
         when(col("missing_rate") > missing_threshold, 1).otherwise(0)
     )
     
-    # Generate incidents for high missing rate
     incidents_df = completeness_df.filter(col("missing_rate") > missing_threshold) \
         .select(
             concat_ws("_", *partition_cols).alias("entity_id"),
@@ -78,13 +67,6 @@ def check_temporal_coherence(
     timestamp_col: str,
     expected_interval_minutes: int = 30
 ) -> Tuple[DataFrame, DataFrame]:
-    """
-    Check temporal coherence: gaps, duplicates, out-of-order records
-    
-    Returns:
-        Tuple of (temporal_metrics, incidents)
-    """
-    # Window function to check ordering and gaps
     window_spec = Window.partitionBy(partition_cols).orderBy(col(timestamp_col))
     
     df_with_lag = df.withColumn(
@@ -95,7 +77,6 @@ def check_temporal_coherence(
         lead(col(timestamp_col), 1).over(window_spec)
     )
     
-    # Calculate time differences
     df_with_diffs = df_with_lag.withColumn(
         "time_diff_minutes",
         (col(timestamp_col).cast("long") - col("prev_timestamp").cast("long")) / 60
@@ -118,7 +99,6 @@ def check_temporal_coherence(
         ).otherwise(0)
     )
     
-    # Aggregate temporal anomalies
     temporal_metrics = df_with_diffs.groupBy(partition_cols + [
         date_trunc("day", col(timestamp_col)).alias("score_date")
     ]).agg(
@@ -137,7 +117,6 @@ def check_temporal_coherence(
         when(col("anomaly_rate") > 0.05, 1).otherwise(0)
     )
     
-    # Generate incidents
     incidents_df = df_with_diffs.filter(
         (col("is_gap") == 1) | (col("is_duplicate") == 1) | (col("is_out_of_order") == 1)
     ).select(
@@ -167,13 +146,6 @@ def check_business_rules(
     max_value: float = 50.0,
     z_score_threshold: float = 5.0
 ) -> Tuple[DataFrame, DataFrame]:
-    """
-    Check business rules: negative values, extreme spikes
-    
-    Returns:
-        Tuple of (business_metrics, incidents)
-    """
-    # Calculate statistics per partition for z-score
     stats_df = df.filter(col(value_col).isNotNull()).groupBy(partition_cols).agg(
         avg(col(value_col)).alias("mean_value"),
         stddev(col(value_col)).alias("std_value"),
@@ -181,10 +153,8 @@ def check_business_rules(
         spark_max(col(value_col)).alias("max_value")
     )
     
-    # Join stats back to original data
     df_with_stats = df.join(stats_df, on=partition_cols, how="left")
     
-    # Check business rules
     df_with_violations = df_with_stats.withColumn(
         "is_negative",
         when(col(value_col) < min_value, 1).otherwise(0)
@@ -202,7 +172,6 @@ def check_business_rules(
         when(spark_abs(col("z_score")) > z_score_threshold, 1).otherwise(0)
     )
     
-    # Aggregate business rule violations
     business_metrics = df_with_violations.groupBy(partition_cols + [
         date_trunc("day", col(timestamp_col)).alias("score_date")
     ]).agg(
@@ -221,7 +190,6 @@ def check_business_rules(
         when(col("violation_rate") > 0.01, 1).otherwise(0)
     )
     
-    # Generate incidents
     incidents_df = df_with_violations.filter(
         (col("is_negative") == 1) | (col("is_above_max") == 1) | (col("is_extreme_spike") == 1)
     ).select(
@@ -250,13 +218,7 @@ def check_schema_validity(
     allowed_acorn_groups: List[str] = None,
     energy_range: Tuple[float, float] = (0.0, 100.0)
 ) -> Tuple[DataFrame, DataFrame]:
-    """
-    Check schema validity: types, ranges, categorical enums
-    
-    Returns:
-        Tuple of (schema_metrics, incidents)
-    """
-    # Check data types and ranges
+
     schema_checks = df.withColumn(
         "has_null_timestamp",
         when(col(timestamp_col).isNull(), 1).otherwise(0)
@@ -295,7 +257,6 @@ def check_schema_validity(
     else:
         schema_checks = schema_checks.withColumn("invalid_acorn", lit(0))
     
-    # Aggregate schema violations
     schema_metrics = schema_checks.groupBy(partition_cols + [
         date_trunc("day", col(timestamp_col)).alias("score_date")
     ]).agg(
@@ -316,7 +277,7 @@ def check_schema_validity(
         1 - col("schema_error_rate")
     )
     
-    # Generate incidents
+
     incidents_df = schema_checks.filter(
         (col("has_null_timestamp") == 1) |
         (col("energy_in_range") == 1) |

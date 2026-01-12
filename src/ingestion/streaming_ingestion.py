@@ -1,5 +1,3 @@
-"""Streaming data ingestion to Bronze layer"""
-
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.streaming import StreamingQuery
 from pyspark.sql.types import *
@@ -12,7 +10,6 @@ import os
 
 
 def add_ingestion_metadata_streaming(df: DataFrame, source: str) -> DataFrame:
-    """Add ingestion metadata columns for streaming"""
     return df.withColumn("_ingestion_timestamp", current_timestamp()) \
              .withColumn("_source", lit(source)) \
              .withColumn("_streaming_batch_id", monotonically_increasing_id())
@@ -25,25 +22,18 @@ def stream_halfhourly_consumption(
     checkpoint_location: str,
     trigger_interval: str = "30 seconds"
 ) -> StreamingQuery:
-    """
-    Stream half-hourly consumption data from directory (simulating real-time ingestion)
-    
-    Assumes new CSV files are being dropped into source_dir
-    """
     schema = StructType([
         StructField("LCLid", StringType(), True),
         StructField("tstp", StringType(), True),
         StructField("energy(kWh/hh)", StringType(), True)
     ])
     
-    # Read streaming CSV files
     stream_df = spark.readStream \
         .option("header", "true") \
         .option("maxFilesPerTrigger", 10) \
         .schema(schema) \
         .csv(source_dir)
     
-    # Transform
     transformed_df = stream_df.select(
         col("LCLid").alias("household_id"),
         to_timestamp(
@@ -53,10 +43,8 @@ def stream_halfhourly_consumption(
         regexp_replace(trim(col("energy(kWh/hh)")), "^\\s*", "").cast(DoubleType()).alias("energy_kwh")
     )
     
-    # Add ingestion metadata
     transformed_df = add_ingestion_metadata_streaming(transformed_df, source="halfhourly_streaming")
     
-    # Write stream to Delta Bronze
     query = transformed_df.writeStream \
         .format("delta") \
         .outputMode("append") \
@@ -75,7 +63,6 @@ def stream_weather_hourly(
     checkpoint_location: str,
     trigger_interval: str = "30 seconds"
 ) -> StreamingQuery:
-    """Stream hourly weather data"""
     stream_df = spark.readStream \
         .option("header", "true") \
         .option("maxFilesPerTrigger", 10) \

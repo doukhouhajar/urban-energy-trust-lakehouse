@@ -1,5 +1,3 @@
-"""Tests for data ingestion"""
-
 import pytest
 from pyspark.sql import SparkSession
 import tempfile
@@ -10,7 +8,6 @@ from src.ingestion.batch_ingestion import add_ingestion_metadata
 
 @pytest.fixture(scope="session")
 def spark():
-    """Create Spark session for testing"""
     return SparkSession.builder \
         .appName("test") \
         .master("local[2]") \
@@ -20,7 +17,6 @@ def spark():
 
 
 def test_add_ingestion_metadata(spark):
-    """Test ingestion metadata addition"""
     from pyspark.sql.types import StructType, StructField, StringType, IntegerType
     
     schema = StructType([
@@ -37,6 +33,6 @@ def test_add_ingestion_metadata(spark):
     assert "_source" in df_with_metadata.columns
     assert "_batch_id" in df_with_metadata.columns
     
-    # Check metadata values
+   # check metadata values
     rows = df_with_metadata.collect()
     assert all(row._source == "test_source" for row in rows)

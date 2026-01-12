@@ -1,5 +1,3 @@
-"""Silver layer transformations: cleaning, validation, standardization"""
-
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
     col, when, isnull, isnan, trim, upper, coalesce,
@@ -17,35 +15,26 @@ def clean_halfhourly_consumption(
     silver_path: str,
     config: Dict
 ) -> DataFrame:
-    """
-    Transform Bronze half-hourly consumption to Silver layer:
-    - Remove duplicates
-    - Fix temporal coherence
-    - Repair missing values (forward fill within household)
-    - Standardize schema
-    - Add derived columns
-    """
     print("Cleaning half-hourly consumption...")
     
-    # Read Bronze data
     df = spark.read.format("delta").load(bronze_path)
     
-    # 1. Remove explicit duplicates (same household_id + timestamp)
+    # 1. remove explicit duplicates
     df = df.dropDuplicates(["household_id", "timestamp"])
     
-    # 2. Remove negative consumption (hard constraint)
+    # 2. remove negative consumption
     df = df.filter(col("energy_kwh") >= 0.0)
     
-    # 3. Remove extreme outliers (above max threshold)
+    # 3. remove extreme outliers
     max_consumption = config.get('quality', {}).get('business_rules', {}).get('max_consumption', 50.0)
     df = df.filter(col("energy_kwh") <= max_consumption)
     
-    # 4. Fix temporal coherence - order by household and timestamp
+    # 4. fix temporal coherence
     window_spec = Window.partitionBy("household_id").orderBy("timestamp")
     df = df.withColumn("row_num", row_number().over(window_spec))
     df = df.filter(col("row_num") == 1).drop("row_num")  # Remove duplicates from ordering
     
-    # 5. Add derived temporal columns
+    # 5. add derived temporal columns
     df = df.withColumn("date", to_date(col("timestamp"))) \
            .withColumn("hour", hour(col("timestamp"))) \
            .withColumn("day_of_week", dayofweek(col("timestamp"))) \
@@ -53,8 +42,7 @@ def clean_halfhourly_consumption(
            .withColumn("month", month(col("timestamp"))) \
            .withColumn("year", year(col("timestamp")))
     
-    # 6. Forward fill missing values within household (within 24-hour window)
-    # This is a simplified approach - in production, use more sophisticated imputation
+    # 6. forward fill missing values within household
     window_24h = Window.partitionBy("household_id").orderBy("timestamp").rowsBetween(-48, 0)
     df = df.withColumn(
         "energy_kwh",
@@ -63,10 +51,10 @@ def clean_halfhourly_consumption(
         ).otherwise(col("energy_kwh"))
     )
     
-    # 7. Remove rows with still-null values after imputation
+    # 7. remove rows with still-null values after imputation
     df = df.filter(col("energy_kwh").isNotNull())
     
-    # 8. Standardize column names and types
+    # 8. standardize column names and types
     df = df.select(
         col("household_id").cast("string"),
         col("timestamp").cast("timestamp"),
@@ -82,13 +70,12 @@ def clean_halfhourly_consumption(
         col("_source").cast("string")
     )
     
-    # 9. Add quality flags (will be computed more thoroughly in quality checks)
+    # 9. add quality flags
     df = df.withColumn("_silver_processed", coalesce(col("energy_kwh"), lit(0.0)) > 0)
     
-    # Write to Silver
     df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(silver_path)
     
-    print(f"✓ Cleaned {df.count()} records to Silver")
+    print(f"Cleaned {df.count()} records to Silver")
     
     return df
 
@@ -99,13 +86,12 @@ def enrich_household_data(
     household_bronze_path: str,
     silver_path: str
 ) -> DataFrame:
-    """Enrich consumption data with household metadata"""
     print("Enriching household data...")
     
     consumption_df = spark.read.format("delta").load(consumption_silver_path)
     household_df = spark.read.format("delta").load(household_bronze_path)
     
-    # Join household info
+    # join household info
     enriched_df = consumption_df.join(
         household_df.select(
             col("household_id"),
@@ -117,7 +103,7 @@ def enrich_household_data(
         how="left"
     )
     
-    # Standardize categorical values
+    # standardize categorical values
     enriched_df = enriched_df.withColumn(
         "tariff_type",
         upper(trim(col("tariff_type")))
@@ -126,10 +112,9 @@ def enrich_household_data(
         trim(col("acorn_group"))
     )
     
-    # Write enriched data
     enriched_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(silver_path)
     
-    print(f"✓ Enriched {enriched_df.count()} records")
+    print(f"Enriched {enriched_df.count()} records")
     
     return enriched_df
 
@@ -140,13 +125,12 @@ def enrich_weather_data(
     weather_hourly_bronze_path: str,
     silver_path: str
 ) -> DataFrame:
-    """Enrich consumption data with weather information"""
     print("Enriching weather data...")
     
     consumption_df = spark.read.format("delta").load(consumption_silver_path)
     weather_df = spark.read.format("delta").load(weather_hourly_bronze_path)
     
-    # Round timestamps to hour for join
+    # round timestamps to hour for join
     consumption_with_hour = consumption_df.withColumn(
         "hour_timestamp",
         date_trunc("hour", col("timestamp"))
@@ -157,7 +141,6 @@ def enrich_weather_data(
         date_trunc("hour", col("timestamp"))
     )
     
-    # Join on hour timestamp
     enriched_df = consumption_with_hour.join(
         weather_with_hour.select(
             col("hour_timestamp"),
@@ -172,28 +155,22 @@ def enrich_weather_data(
         how="left"
     ).drop("hour_timestamp")
     
-    # Write enriched data
     enriched_df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(silver_path)
     
-    print(f"✓ Enriched with weather data")
+    print(f"Enriched with weather data")
     
     return enriched_df
 
 
 def run_silver_transformations(spark: SparkSession, config: Dict) -> Dict[str, DataFrame]:
-    """Run all Silver layer transformations"""
     paths = config['paths']
     
     results = {}
     
-    print("=" * 60)
     print("SILVER LAYER TRANSFORMATIONS")
-    print("=" * 60)
     
-    # Create Silver directory
     os.makedirs(paths['silver_root'], exist_ok=True)
     
-    # Clean half-hourly consumption
     print("\n1. Cleaning half-hourly consumption...")
     results['halfhourly_consumption'] = clean_halfhourly_consumption(
         spark,
@@ -202,7 +179,6 @@ def run_silver_transformations(spark: SparkSession, config: Dict) -> Dict[str, D
         config
     )
     
-    # Enrich with household data
     print("\n2. Enriching with household metadata...")
     results['household_enriched'] = enrich_household_data(
         spark,
@@ -211,7 +187,6 @@ def run_silver_transformations(spark: SparkSession, config: Dict) -> Dict[str, D
         os.path.join(paths['silver_root'], "household_enriched")
     )
     
-    # Enrich with weather data
     print("\n3. Enriching with weather data...")
     results['weather_enriched'] = enrich_weather_data(
         spark,
@@ -220,8 +195,6 @@ def run_silver_transformations(spark: SparkSession, config: Dict) -> Dict[str, D
         os.path.join(paths['silver_root'], "weather_enriched")
     )
     
-    print("\n" + "=" * 60)
     print("SILVER TRANSFORMATIONS COMPLETE")
-    print("=" * 60)
     
     return results

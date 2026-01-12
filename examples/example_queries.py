@@ -1,5 +1,3 @@
-"""Example queries for the Urban Energy Trust Lakehouse"""
-
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, avg, count, sum as spark_sum, desc, current_date, expr
 from src.utils.config import load_config
@@ -7,16 +5,13 @@ from src.utils.spark_session import get_or_create_spark_session
 
 
 def example_top_areas_by_quality_score(spark: SparkSession, config: dict):
-    """Top areas by low quality score"""
     paths = config['paths']
     
     quality_scores = spark.read.format("delta").load(
         f"{paths['gold_root']}/quality_scores"
     )
     
-    print("=" * 80)
     print("TOP AREAS BY LOW QUALITY SCORE")
-    print("=" * 80)
     
     # Join with household info to get ACORN groups
     household_info = spark.read.format("delta").load(
@@ -44,16 +39,13 @@ def example_top_areas_by_quality_score(spark: SparkSession, config: dict):
 
 
 def example_incidents_by_type_over_time(spark: SparkSession, config: dict):
-    """Incidents by type over time"""
     paths = config['paths']
     
     incidents = spark.read.format("delta").load(
         f"{paths['gold_root']}/quality_incidents"
     )
     
-    print("=" * 80)
     print("INCIDENTS BY TYPE OVER TIME")
-    print("=" * 80)
     
     result = incidents.filter(
         col("incident_timestamp") >= expr("current_date() - INTERVAL 30 DAYS")
@@ -74,16 +66,13 @@ def example_incidents_by_type_over_time(spark: SparkSession, config: dict):
 
 
 def example_quality_risk_predictions(spark: SparkSession, config: dict):
-    """Quality risk predictions"""
     paths = config['paths']
     
     predictions = spark.read.format("delta").load(
         f"{paths['gold_root']}/quality_risk_predictions"
     )
     
-    print("=" * 80)
     print("QUALITY RISK PREDICTIONS (Next Day)")
-    print("=" * 80)
     
     result = predictions.filter(
         col("prediction_date") == expr("current_date() + INTERVAL 1 DAY")
@@ -96,11 +85,9 @@ def example_quality_risk_predictions(spark: SparkSession, config: dict):
 
 
 def example_building_aggregation_by_admin_area(spark: SparkSession, config: dict):
-    """Building aggregation by admin area"""
     paths = config['paths']
     
-    # Note: This is a placeholder query. In production with Sedona,
-    # use ST_Within for spatial joins
+    # this is a placeholder query
     buildings = spark.read.format("delta").load(
         f"{paths['gold_root']}/osm_buildings"
     )
@@ -109,13 +96,11 @@ def example_building_aggregation_by_admin_area(spark: SparkSession, config: dict
         f"{paths['gold_root']}/gadm_level3"
     )
     
-    print("=" * 80)
     print("BUILDING AGGREGATION BY ADMIN AREA")
-    print("=" * 80)
     print("Note: This requires spatial joins with Sedona in production")
     print("Placeholder query structure:")
     
-    # Placeholder - in production, use spatial join
+    # use spatial join
     result = admin_areas.select(
         col("district").alias("admin_area"),
         col("county"),
@@ -130,12 +115,9 @@ def example_building_aggregation_by_admin_area(spark: SparkSession, config: dict
 
 
 def example_time_travel_query(spark: SparkSession, config: dict):
-    """Example time travel query - view table at previous version"""
     paths = config['paths']
     
-    print("=" * 80)
     print("TIME TRAVEL EXAMPLE - View Quality Scores at Previous Version")
-    print("=" * 80)
     
     # Get current version
     current_df = spark.read.format("delta").load(
@@ -165,17 +147,14 @@ def example_time_travel_query(spark: SparkSession, config: dict):
 
 
 def run_all_examples():
-    """Run all example queries"""
     config = load_config()
     spark = get_or_create_spark_session(config, use_docker=False)
     
     try:
-        print("\n" + "=" * 80)
         print("URBAN ENERGY TRUST LAKEHOUSE - EXAMPLE QUERIES")
-        print("=" * 80)
+
         print()
         
-        # Run examples
         example_top_areas_by_quality_score(spark, config)
         print()
         
@@ -191,9 +170,9 @@ def run_all_examples():
         example_time_travel_query(spark, config)
         print()
         
-        print("=" * 80)
+
         print("ALL EXAMPLE QUERIES COMPLETED")
-        print("=" * 80)
+
         
     except Exception as e:
         print(f"Error running examples: {e}")

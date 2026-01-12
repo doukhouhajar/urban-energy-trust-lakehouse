@@ -1,5 +1,3 @@
-"""End-to-end batch pipeline: Bronze -> Silver -> Gold + Quality"""
-
 from pyspark.sql import SparkSession
 import os
 from datetime import datetime
@@ -26,15 +24,6 @@ from src.geospatial.spatial_operations import create_building_aggregations
 
 
 def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
-    """
-    Run complete batch pipeline:
-    1. Bronze ingestion
-    2. Geospatial ingestion
-    3. Silver transformations
-    4. Quality checks and scoring
-    5. Gold transformations
-    6. Audit logging
-    """
     paths = config['paths']
     pipeline_name = "batch_pipeline"
     status = "SUCCESS"
@@ -45,18 +34,13 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
     quality_summary = {}
     
     try:
-        print("=" * 80)
         print("URBAN ENERGY TRUST LAKEHOUSE - BATCH PIPELINE")
-        print("=" * 80)
         print(f"Started at: {datetime.now()}")
         print()
         
-        # Step 1: Bronze Ingestion
         print("STEP 1: BRONZE LAYER INGESTION")
-        print("-" * 80)
         bronze_results = run_bronze_ingestion(spark, config)
         
-        # Record row counts for audit
         for key, df in bronze_results.items():
             table_path = os.path.join(paths['bronze_root'], key)
             row_counts[table_path] = df.count()
@@ -65,22 +49,28 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         
         print()
         
-        # Step 2: Geospatial Ingestion
         print("STEP 2: GEOSPATIAL INGESTION")
-        print("-" * 80)
-        gadm_results = run_gadm_ingestion(spark, config)
-        osm_results = run_osm_ingestion(spark, config)
+        try:
+            gadm_results = run_gadm_ingestion(spark, config)
+            for key, df in gadm_results.items():
+                table_path = os.path.join(paths['bronze_root'], key)
+                row_counts[table_path] = df.count()
+                output_paths[f"geospatial_{key}"] = table_path
+        except Exception as e:
+            print(f"Warning: GADM ingestion failed: {e}")
+            print("Continuing without geospatial data...")
+            gadm_results = {}
         
-        for key, df in gadm_results.items():
-            table_path = os.path.join(paths['bronze_root'], key)
-            row_counts[table_path] = df.count()
-            output_paths[f"geospatial_{key}"] = table_path
+        try:
+            osm_results = run_osm_ingestion(spark, config)
+        except Exception as e:
+            print(f"Warning: OSM ingestion failed: {e}")
+            print("Continuing without OSM data...")
+            osm_results = None
         
         print()
         
-        # Step 3: Silver Transformations
         print("STEP 3: SILVER LAYER TRANSFORMATIONS")
-        print("-" * 80)
         silver_results = run_silver_transformations(spark, config)
         
         for key, df in silver_results.items():
@@ -90,11 +80,8 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         
         print()
         
-        # Step 4: Quality Checks
         print("STEP 4: DATA QUALITY CHECKS")
-        print("-" * 80)
         
-        # Read Silver data for quality checks
         silver_consumption_path = os.path.join(paths['silver_root'], "household_enriched")
         silver_df = spark.read.format("delta").load(silver_consumption_path)
         
@@ -135,13 +122,12 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
             allowed_acorn_groups=config.get('quality', {}).get('schema', {}).get('allowed_acorn_groups', ["Affluent", "Comfortable", "Adversity", "ACORN-"]),
             energy_range=tuple(config.get('quality', {}).get('schema', {}).get('energy_range', [0.0, 100.0]))
         )
-        
-        # Combine all incidents
+
         all_incidents = completeness_incidents.unionByName(temporal_incidents, allowMissingColumns=True) \
             .unionByName(business_incidents, allowMissingColumns=True) \
             .unionByName(schema_incidents, allowMissingColumns=True)
         
-        # Compute quality scores
+
         print("Computing quality scores...")
         quality_scores = compute_quality_scores(
             completeness_metrics,
@@ -151,7 +137,6 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
             config
         )
         
-        # Write quality scores and incidents to Gold
         quality_scores_path = os.path.join(paths['gold_root'], "quality_scores")
         quality_incidents_path = os.path.join(paths['gold_root'], "quality_incidents")
         
@@ -165,17 +150,14 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         
         quality_summary = get_quality_score_summary(spark, quality_scores_path)
         
-        print(f"   ✓ Quality scores computed: {quality_scores.count()} records")
-        print(f"   ✓ Quality incidents: {all_incidents.count()} incidents")
+        print(f"   Quality scores computed: {quality_scores.count()} records")
+        print(f"   Quality incidents: {all_incidents.count()} incidents")
         
         print()
         
-        # Step 5: Gold Transformations
         print("STEP 5: GOLD LAYER TRANSFORMATIONS")
-        print("-" * 80)
         gold_results = run_gold_transformations(spark, config)
         
-        # Building aggregations
         print("\n6. Creating building aggregations...")
         building_agg = create_building_aggregations(spark, config)
         
@@ -186,9 +168,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         
         print()
         
-        print("=" * 80)
         print("BATCH PIPELINE COMPLETED SUCCESSFULLY")
-        print("=" * 80)
         print(f"Finished at: {datetime.now()}")
         
     except Exception as e:
@@ -196,11 +176,9 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         error_message = str(e)
         print("\n" + "=" * 80)
         print(f"PIPELINE FAILED: {error_message}")
-        print("=" * 80)
         raise
     
     finally:
-        # Audit logging
         print("\nWriting audit log...")
         audit_log_path = os.path.join(paths['gold_root'], "audit_log")
         log_pipeline_run(
@@ -215,24 +193,23 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
             status=status,
             error_message=error_message
         )
-        print("   ✓ Audit log written")
+        print("   Audit log written")
     
     return status == "SUCCESS"
 
 
 def main():
-    """Main entry point"""
     config = load_config()
     spark = get_or_create_spark_session(config, use_docker=False)
     
     try:
         success = run_batch_pipeline(spark, config)
         if success:
-            print("\n✓ Batch pipeline completed successfully!")
+            print("\nBatch pipeline completed successfully!")
         else:
-            print("\n✗ Batch pipeline completed with errors")
+            print("\nBatch pipeline completed with errors")
     except Exception as e:
-        print(f"\n✗ Batch pipeline failed: {e}")
+        print(f"\nBatch pipeline failed: {e}")
         raise
     finally:
         spark.stop()

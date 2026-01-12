@@ -1,5 +1,3 @@
-"""Tests for quality checks"""
-
 import pytest
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, lit
@@ -13,7 +11,6 @@ from src.quality.custom_checks import (
 
 @pytest.fixture(scope="session")
 def spark():
-    """Create Spark session for testing"""
     return SparkSession.builder \
         .appName("test") \
         .master("local[2]") \
@@ -24,7 +21,6 @@ def spark():
 
 @pytest.fixture
 def sample_consumption_data(spark):
-    """Create sample consumption data for testing"""
     schema = StructType([
         StructField("household_id", StringType(), True),
         StructField("timestamp", TimestampType(), True),
@@ -45,7 +41,6 @@ def sample_consumption_data(spark):
 
 
 def test_check_completeness(spark, sample_consumption_data):
-    """Test completeness check"""
     completeness_metrics, incidents = check_completeness(
         sample_consumption_data,
         partition_cols=["household_id"],
@@ -60,7 +55,6 @@ def test_check_completeness(spark, sample_consumption_data):
 
 
 def test_check_business_rules(spark, sample_consumption_data):
-    """Test business rules check"""
     business_metrics, incidents = check_business_rules(
         sample_consumption_data,
         partition_cols=["household_id"],
@@ -73,13 +67,12 @@ def test_check_business_rules(spark, sample_consumption_data):
     
     assert business_metrics is not None
     assert incidents is not None
-    # Should detect negative and above-max values
+    # should detect negative and above-max values
     incidents_list = incidents.collect()
     assert len([i for i in incidents_list if "negative" in i.rule_name]) > 0
 
 
 def test_check_temporal_coherence(spark, sample_consumption_data):
-    """Test temporal coherence check"""
     temporal_metrics, incidents = check_temporal_coherence(
         sample_consumption_data,
         partition_cols=["household_id"],
@@ -92,7 +85,6 @@ def test_check_temporal_coherence(spark, sample_consumption_data):
 
 
 def test_check_schema_validity(spark):
-    """Test schema validity check"""
     schema = StructType([
         StructField("household_id", StringType(), True),
         StructField("timestamp", TimestampType(), True),

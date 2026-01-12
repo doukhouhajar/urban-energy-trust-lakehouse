@@ -1,5 +1,3 @@
-"""Quality scoring and aggregation"""
-
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
     col, when, lit, avg, count, sum as spark_sum,
@@ -7,7 +5,13 @@ from pyspark.sql.functions import (
 )
 from typing import Dict
 
-
+"""
+    Quality Score = 
+        40 * (1 - completeness_error_rate) +
+        25 * (1 - temporal_coherence_error_rate) +
+        20 * (1 - business_rule_violation_rate) +
+        15 * schema_validity_score
+"""
 def compute_quality_scores(
     completeness_metrics: DataFrame,
     temporal_metrics: DataFrame,
@@ -15,16 +19,6 @@ def compute_quality_scores(
     schema_metrics: DataFrame,
     config: Dict
 ) -> DataFrame:
-    """
-    Compute overall quality scores (0-100) from individual metric DataFrames
-    
-    Formula:
-    Quality Score = 
-        40 * (1 - completeness_error_rate) +
-        25 * (1 - temporal_coherence_error_rate) +
-        20 * (1 - business_rule_violation_rate) +
-        15 * schema_validity_score
-    """
     quality_config = config.get('quality', {}).get('scoring', {})
     
     weights = {
@@ -35,8 +29,8 @@ def compute_quality_scores(
     }
     
     # Join all metrics on partition columns and score_date
-    # Assume all have: partition_cols + score_date
-    partition_cols = ["household_id"]  # Default, can be parameterized
+    # all have: partition_cols + score_date
+    partition_cols = ["household_id"]  # Default
     
     # Prepare completeness component (0-1)
     completeness_component = completeness_metrics.select(
@@ -66,13 +60,12 @@ def compute_quality_scores(
         coalesce(col("schema_validity_score"), lit(1.0)).alias("schema_score")
     )
     
-    # Join all components
     scores_df = completeness_component \
         .join(temporal_component, on=["household_id", "score_date"], how="outer") \
         .join(business_component, on=["household_id", "score_date"], how="outer") \
         .join(schema_component, on=["household_id", "score_date"], how="outer")
     
-    # Fill nulls with 1.0 (perfect score if metric not computed)
+    # fill nulls with 1.0
     scores_df = scores_df.fillna({
         "completeness_score": 1.0,
         "temporal_score": 1.0,
@@ -80,7 +73,7 @@ def compute_quality_scores(
         "schema_score": 1.0
     })
     
-    # Compute weighted quality score (0-100)
+    # weighted quality score 
     scores_df = scores_df.withColumn(
         "quality_score",
         (
@@ -108,9 +101,6 @@ def aggregate_quality_scores_by_partition(
     partition_cols: list,
     time_window: str = "day"
 ) -> DataFrame:
-    """
-    Aggregate quality scores by partition (e.g., ACORN group, block, area)
-    """
     agg_df = quality_scores.groupBy(partition_cols + [
         date_trunc(time_window, col("score_date")).alias(f"{time_window}_window")
     ]).agg(
@@ -134,7 +124,6 @@ def write_quality_scores(
     target_path: str,
     mode: str = "append"
 ):
-    """Write quality scores to Delta table"""
     quality_scores.write \
         .format("delta") \
         .mode(mode) \
@@ -147,7 +136,6 @@ def write_quality_incidents(
     target_path: str,
     mode: str = "append"
 ):
-    """Write quality incidents to Delta table"""
     incidents.write \
         .format("delta") \
         .mode(mode) \

@@ -1,11 +1,10 @@
 # Urban Energy Data Lakehouse with Data Quality & Governance
-## London Pilot — Smart City Decision-Making
 
-A production-grade data lakehouse architecture implementing Bronze/Silver/Gold layers with comprehensive data quality validation, governance, and ML-powered quality risk prediction for smart meter electricity consumption data.
+A data lakehouse architecture implementing Bronze/Silver/Gold layers with comprehensive data quality validation, governance and quality risk prediction for smart meter electricity consumption data.
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ### Lakehouse Layers
 
@@ -38,16 +37,7 @@ A production-grade data lakehouse architecture implementing Bronze/Silver/Gold l
 
 ---
 
-## 📋 Prerequisites
-
-- Python 3.9+
-- Java 8 or 11
-- Docker & Docker Compose (for Spark cluster)
-- 16GB+ RAM recommended
-
----
-
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Setup Environment
 
@@ -103,7 +93,7 @@ make ml-train
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 urban-energy-trust-lakehouse/
@@ -137,9 +127,7 @@ urban-energy-trust-lakehouse/
 │       ├── batch_pipeline.py       # End-to-end batch pipeline
 │       └── streaming_pipeline.py   # End-to-end streaming pipeline
 ├── notebooks/
-│   ├── 01_exploration.ipynb        # Data exploration
-│   ├── 02_quality_analysis.ipynb   # Quality analysis
-│   └── 03_ml_evaluation.ipynb      # ML model evaluation
+│   └── exploration.ipynb      
 ├── tests/
 │   ├── test_ingestion.py
 │   ├── test_quality.py
@@ -159,7 +147,7 @@ urban-energy-trust-lakehouse/
 
 ---
 
-## 🔍 Data Quality Rules
+## Data Quality Rules
 
 ### Completeness
 - Missing rate per household per day/week
@@ -198,96 +186,10 @@ Where:
 
 ---
 
-## 📊 Example Queries
-
-### Top Areas by Low Quality Score
-
-```sql
-SELECT 
-    acorn_grouped,
-    DATE_TRUNC('day', score_date) as day,
-    AVG(quality_score) as avg_score,
-    COUNT(*) as household_count
-FROM gold.quality_scores
-WHERE score_date >= CURRENT_DATE - INTERVAL 7 DAYS
-GROUP BY acorn_grouped, DATE_TRUNC('day', score_date)
-ORDER BY avg_score ASC
-LIMIT 20;
-```
-
-### Incidents by Type Over Time
-
-```sql
-SELECT 
-    DATE_TRUNC('day', incident_timestamp) as day,
-    rule_name,
-    severity,
-    COUNT(*) as incident_count,
-    COUNT(DISTINCT entity_id) as affected_households
-FROM gold.quality_incidents
-WHERE incident_timestamp >= CURRENT_DATE - INTERVAL 30 DAYS
-GROUP BY day, rule_name, severity
-ORDER BY day DESC, incident_count DESC;
-```
-
-### Quality Risk Predictions
-
-```sql
-SELECT 
-    prediction_date,
-    entity_id,
-    risk_score,
-    risk_category,
-    top_features,
-    model_version
-FROM gold.quality_risk_predictions
-WHERE prediction_date = CURRENT_DATE + INTERVAL 1 DAY
-ORDER BY risk_score DESC
-LIMIT 100;
-```
-
-### Building Aggregation by Admin Area
-
-```sql
-SELECT 
-    g3.NAME_3 as admin_area,
-    COUNT(b.id) as building_count,
-    SUM(ST_Area(b.geometry)) as total_area_m2
-FROM gold.osm_buildings b
-JOIN gold.gadm_level3 g3 
-    ON ST_Within(ST_Transform(b.geometry, 4326), g3.geom)
-WHERE g3.NAME_0 = 'United Kingdom'
-GROUP BY g3.NAME_3
-ORDER BY building_count DESC
-LIMIT 50;
-```
-
----
-
-## 🔄 Time Travel & Versioning
-
-Delta Lake provides time travel capabilities. Access historical versions:
-
-```python
-from src.governance.versioning import get_table_version
-
-# View table at a specific version
-df = spark.read.format("delta").option("versionAsOf", 5).load("lakehouse/gold/consumption")
-
-# View table at a specific timestamp
-df = spark.read.format("delta").option("timestampAsOf", "2024-01-01").load("lakehouse/gold/consumption")
-
-# Get version history
-history = spark.sql("DESCRIBE HISTORY delta.`lakehouse/gold/consumption`")
-history.show()
-```
-
----
-
-## 📈 ML Model: Quality Risk Prediction
+## ML Model: Quality Risk Prediction
 
 ### Problem Definition
-Predict whether a future time window (e.g., next day) will have low quality (quality score < threshold OR high incident count).
+Predict whether a future time window (next day) will have low quality (quality score < threshold OR high incident count).
 
 ### Features
 - Historical missing rate (7-day, 30-day rolling)
@@ -305,7 +207,7 @@ Predict whether a future time window (e.g., next day) will have low quality (qua
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -320,18 +222,7 @@ pytest tests/ --cov=src --cov-report=html
 
 ---
 
-## 📝 Configuration
-
-Edit `config/config.yaml` to customize:
-- Data paths
-- Table names
-- Quality thresholds
-- ML model parameters
-- Spark configuration
-
----
-
-## 🐳 Docker Commands
+## Docker Commands
 
 ```bash
 # Start services
@@ -347,38 +238,8 @@ docker-compose down
 # Rebuild images
 docker-compose build --no-cache
 ```
-
 ---
 
-## 📚 Additional Resources
-
-- **Delta Lake Documentation**: https://delta.io
-- **Great Expectations**: https://greatexpectations.io
-- **Apache Sedona**: https://sedona.apache.org
-- **Spark Structured Streaming**: https://spark.apache.org/docs/latest/structured-streaming-programming-guide.html
-
----
-
-## 🎯 Acceptance Criteria Status
-
-- ✅ End-to-end batch pipeline with Bronze/Silver/Gold layers
-- ✅ Streaming pipeline with Structured Streaming
-- ✅ Great Expectations + custom quality checks
-- ✅ Quality scoring and incident logging
-- ✅ Geospatial ingestion (GADM + OSM) with spatial operations
-- ✅ ML model for quality risk prediction
-- ✅ Schema evolution and audit logging
-- ✅ Time travel/versioning support
-- ✅ Comprehensive documentation and example queries
-
----
-
-## 👥 Authors
-
-Urban Energy Trust - London Pilot Team
-
----
-
-## 📄 License
+## License
 
 MIT License

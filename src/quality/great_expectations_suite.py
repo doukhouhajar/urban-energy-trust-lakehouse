@@ -1,23 +1,13 @@
-"""Great Expectations suite definitions for data quality validation"""
-
-from great_expectations.core import ExpectationSuite, ExpectationConfiguration
+from config.great_expectations import ExpectationSuite, ExpectationConfiguration
 from typing import Dict, List
 
 
 def create_halfhourly_consumption_suite() -> ExpectationSuite:
-    """
-    Create Great Expectations suite for half-hourly consumption data
-    
-    Note: This is a placeholder. In production, use GE's DataContext
-    and create expectations interactively or programmatically.
-    """
     suite = ExpectationSuite(
         expectation_suite_name="halfhourly_consumption_suite"
     )
     
-    # Add expectations
     expectations = [
-        # Column existence
         ExpectationConfiguration(
             expectation_type="expect_column_to_exist",
             kwargs={"column": "household_id"}
@@ -80,17 +70,10 @@ def validate_with_great_expectations(
     suite: ExpectationSuite,
     evaluation_parameter_kwargs: Dict = None
 ):
-    """
-    Validate DataFrame against Great Expectations suite
-    
-    Note: This is a simplified interface. In production, use GE's
-    Validator and CheckpointRunner for full validation workflows.
-    """
     try:
         import great_expectations as ge
         
         # Convert Spark DataFrame to Pandas (for GE)
-        # In production, use GE's Spark backend
         pandas_df = df.toPandas()
         
         # Create GE DataFrame

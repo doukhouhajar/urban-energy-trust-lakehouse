@@ -1,5 +1,3 @@
-"""Model utilities and helpers"""
-
 import os
 import json
 import joblib
@@ -13,7 +11,6 @@ def save_model_metadata(
     metrics: Dict,
     feature_info: Dict
 ):
-    """Save model metadata to JSON file"""
     metadata = {
         "model_version": model_version,
         "timestamp": datetime.now().isoformat(),
@@ -29,7 +26,6 @@ def save_model_metadata(
 
 
 def load_model_metadata(model_path: str, model_version: Optional[str] = None) -> Dict:
-    """Load model metadata"""
     if model_version is None:
         # Find latest metadata file
         metadata_files = [f for f in os.listdir(model_path) if f.startswith("metadata_") and f.endswith(".json")]
@@ -50,7 +46,6 @@ def load_model_metadata(model_path: str, model_version: Optional[str] = None) ->
 
 
 def get_model_versions(model_path: str) -> List[str]:
-    """Get list of available model versions"""
     if not os.path.exists(model_path):
         return []
     

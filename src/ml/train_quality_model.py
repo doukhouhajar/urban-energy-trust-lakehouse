@@ -1,5 +1,3 @@
-"""Train ML model for quality risk prediction"""
-
 from pyspark.sql import SparkSession
 import lightgbm as lgb
 import pandas as pd
@@ -23,14 +21,12 @@ def train_lightgbm_model(
     feature_cols: list,
     config: Dict
 ) -> tuple:
-    """Train LightGBM model"""
     ml_config = config.get('ml', {}).get('quality_risk', {})
     lgb_params = ml_config.get('lightgbm_params', {})
     
     X_train = train_df[feature_cols]
     y_train = train_df[target_col]
     
-    # Train LightGBM
     train_data = lgb.Dataset(X_train, label=y_train)
     
     model = lgb.train(
@@ -45,18 +41,14 @@ def train_lightgbm_model(
 
 
 def evaluate_model(model, X_test: pd.DataFrame, y_test: pd.Series, feature_cols: list) -> Dict:
-    """Evaluate model performance"""
     y_pred_proba = model.predict(X_test[feature_cols])
     y_pred = (y_pred_proba >= 0.5).astype(int)
     
-    # Compute metrics
     auc = roc_auc_score(y_test, y_pred_proba)
     f1 = f1_score(y_test, y_pred)
     
-    # Classification report
     report = classification_report(y_test, y_pred, output_dict=True)
     
-    # Feature importance
     feature_importance = dict(zip(feature_cols, model.feature_importance(importance_type='gain')))
     
     return {
@@ -68,35 +60,25 @@ def evaluate_model(model, X_test: pd.DataFrame, y_test: pd.Series, feature_cols:
 
 
 def train_and_evaluate(spark: SparkSession, config: Dict):
-    """Train and evaluate quality risk prediction model"""
-    print("=" * 60)
     print("QUALITY RISK MODEL TRAINING")
-    print("=" * 60)
     
-    # Prepare features
     print("\n1. Preparing ML features...")
     ml_dataset = prepare_ml_features(spark, config)
     
-    # Convert to Pandas for LightGBM (for large datasets, use Spark MLlib)
     print("\n2. Converting to Pandas DataFrame...")
     ml_pandas = ml_dataset.toPandas()
     
-    # Select feature columns (exclude target and metadata)
     exclude_cols = ['household_id', 'score_date', 'target']
     feature_cols = [col for col in ml_pandas.columns if col not in exclude_cols]
     
-    # Handle categorical variables (one-hot encoding or label encoding)
     categorical_cols = ['acorn_group', 'tariff_type']
     for cat_col in categorical_cols:
         if cat_col in ml_pandas.columns:
             ml_pandas = pd.get_dummies(ml_pandas, columns=[cat_col], prefix=cat_col)
-            # Update feature columns
             feature_cols = [col for col in ml_pandas.columns if col not in exclude_cols]
     
-    # Fill remaining nulls
     ml_pandas = ml_pandas.fillna(0)
     
-    # Split train/test
     ml_config = config.get('ml', {}).get('quality_risk', {})
     test_size = 1 - ml_config.get('train_test_split', 0.8)
     random_state = ml_config.get('random_state', 42)
@@ -112,11 +94,9 @@ def train_and_evaluate(spark: SparkSession, config: Dict):
     print(f"   Test samples: {len(test_df)}")
     print(f"   Features: {len(feature_cols)}")
     
-    # Train model
     print("\n3. Training LightGBM model...")
     model = train_lightgbm_model(train_df, 'target', feature_cols, config)
     
-    # Evaluate
     print("\n4. Evaluating model...")
     metrics = evaluate_model(model, test_df, test_df['target'], feature_cols)
     
@@ -129,7 +109,6 @@ def train_and_evaluate(spark: SparkSession, config: Dict):
     for feature, importance in sorted_importance[:10]:
         print(f"  {feature}: {importance:.2f}")
     
-    # Save model
     model_path = config.get('ml', {}).get('quality_risk', {}).get('model_path', 'models/quality_risk_model')
     os.makedirs(model_path, exist_ok=True)
     
@@ -140,12 +119,10 @@ def train_and_evaluate(spark: SparkSession, config: Dict):
     joblib.dump(model, model_file)
     print(f"\n5. Saved model to {model_file}")
     
-    # Save metrics
     with open(metrics_file, 'w') as f:
         json.dump(metrics, f, indent=2)
     print(f"   Saved metrics to {metrics_file}")
     
-    # Save feature columns list
     feature_info = {
         'feature_columns': feature_cols,
         'model_version': model_version,
@@ -156,23 +133,20 @@ def train_and_evaluate(spark: SparkSession, config: Dict):
     with open(feature_info_file, 'w') as f:
         json.dump(feature_info, f, indent=2)
     
-    print("\n" + "=" * 60)
     print("MODEL TRAINING COMPLETE")
-    print("=" * 60)
     
     return model, metrics
 
 
 def main():
-    """Main entry point"""
     config = load_config()
     spark = get_or_create_spark_session(config, use_docker=False)
     
     try:
         model, metrics = train_and_evaluate(spark, config)
-        print("\n✓ Model training completed successfully!")
+        print("\nModel training completed successfully!")
     except Exception as e:
-        print(f"\n✗ Model training failed: {e}")
+        print(f"\nModel training failed: {e}")
         raise
     finally:
         spark.stop()

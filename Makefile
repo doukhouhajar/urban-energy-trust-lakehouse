@@ -2,7 +2,6 @@
 
 help:
 	@echo "Urban Energy Trust Lakehouse - Available Commands"
-	@echo "=================================================="
 	@echo "  make install      - Install Python dependencies"
 	@echo "  make setup        - Setup virtual environment and install deps"
 	@echo "  make docker-up    - Start Docker Compose services"

@@ -1,5 +1,3 @@
-"""Pipeline audit logging for traceability"""
-
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, lit, current_timestamp, count
 from typing import Dict, Optional
@@ -21,26 +19,13 @@ def log_pipeline_run(
     status: str = "SUCCESS",
     error_message: Optional[str] = None
 ):
-    """
-    Log a pipeline run to the audit log Delta table
+
+    from datetime import datetime
+    current_ts = datetime.now()
     
-    Args:
-        spark: SparkSession
-        audit_log_path: Path to audit log Delta table
-        pipeline_name: Name of the pipeline
-        config: Configuration used
-        input_versions: Dict of input table -> version number
-        output_paths: Dict of output_name -> Delta table path
-        row_counts: Dict of table -> row count
-        rejected_rows: Number of rejected rows
-        quality_score_summary: Dict with quality metrics
-        status: Pipeline status (SUCCESS, FAILED, PARTIAL)
-        error_message: Error message if failed
-    """
-    # Create audit log entry
     audit_entry = {
         "pipeline_name": pipeline_name,
-        "run_timestamp": current_timestamp(),
+        "run_timestamp": current_ts,
         "status": status,
         "error_message": error_message if error_message else None,
         "config_snapshot": json.dumps(config),
@@ -51,7 +36,6 @@ def log_pipeline_run(
         "quality_score_summary": json.dumps(quality_score_summary or {})
     }
     
-    # Create DataFrame from audit entry
     audit_df = spark.createDataFrame([audit_entry], schema="""
         pipeline_name STRING,
         run_timestamp TIMESTAMP,
@@ -65,18 +49,14 @@ def log_pipeline_run(
         quality_score_summary STRING
     """)
     
-    # Create or append to audit log
     if os.path.exists(audit_log_path) and DeltaTable.isDeltaTable(spark, audit_log_path):
-        # Append to existing table
         audit_df.write.format("delta").mode("append").save(audit_log_path)
     else:
-        # Create new table
         os.makedirs(os.path.dirname(audit_log_path), exist_ok=True)
         audit_df.write.format("delta").mode("overwrite").save(audit_log_path)
 
 
 def get_table_row_count(spark: SparkSession, table_path: str) -> int:
-    """Get row count from a Delta table"""
     try:
         df = spark.read.format("delta").load(table_path)
         return df.count()
@@ -86,7 +66,6 @@ def get_table_row_count(spark: SparkSession, table_path: str) -> int:
 
 
 def get_table_version(spark: SparkSession, table_path: str) -> int:
-    """Get current version of a Delta table"""
     try:
         if DeltaTable.isDeltaTable(spark, table_path):
             delta_table = DeltaTable.forPath(spark, table_path)
@@ -100,7 +79,6 @@ def get_table_version(spark: SparkSession, table_path: str) -> int:
 
 
 def get_quality_score_summary(spark: SparkSession, quality_scores_path: str) -> Dict:
-    """Get summary statistics from quality scores table"""
     try:
         df = spark.read.format("delta").load(quality_scores_path)
         summary = df.agg({
@@ -128,7 +106,6 @@ def query_audit_log(
     status: Optional[str] = None,
     limit: int = 100
 ) -> DataFrame:
-    """Query audit log with optional filters"""
     df = spark.read.format("delta").load(audit_log_path)
     
     if pipeline_name:
