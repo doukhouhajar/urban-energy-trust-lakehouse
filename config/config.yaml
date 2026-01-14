@@ -1,26 +1,28 @@
 paths:
-  raw_data_root: "data/raw"
-  lakehouse_root: "data/lakehouse"
+  raw_data_root: "/urban-energy-trust-lakehouse/data/raw"
+  lakehouse_root: "/urban-energy-trust-lakehouse/lakehouse"
   
   smart_meters:
-    household_info: "data/raw/kaggle_smart_meters_london/informations_households.csv"
-    acorn_details: "data/raw/kaggle_smart_meters_london/acorn_details.csv"
-    halfhourly_dir: "data/raw/kaggle_smart_meters_london/halfhourly_dataset/halfhourly_dataset"
-    daily_dir: "data/raw/kaggle_smart_meters_london/daily_dataset/daily_dataset"
-    weather_hourly: "data/raw/kaggle_smart_meters_london/weather_hourly_darksky.csv"
-    weather_daily: "data/raw/kaggle_smart_meters_london/weather_daily_darksky.csv"
-    bank_holidays: "data/raw/kaggle_smart_meters_london/uk_bank_holidays.csv"
+    household_info: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/informations_households.csv"
+    acorn_details: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/acorn_details.csv"
+    halfhourly_dir: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/halfhourly_dataset/halfhourly_dataset"
+    daily_dir: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/daily_dataset/daily_dataset"
+    weather_hourly: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/weather_hourly_darksky.csv"
+    weather_daily: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/weather_daily_darksky.csv"
+    bank_holidays: "/urban-energy-trust-lakehouse/data/raw/kaggle_smart_meters_london/uk_bank_holidays.csv"
   
   geospatial:
-    gadm_gpkg: "data/raw/gadm/gadm41_GBR.gpkg"
-    osm_pbf: "data/raw/osm/united-kingdom-260108.osm.pbf"
+    gadm_gpkg: "/urban-energy-trust-lakehouse/data/raw/gadm/gadm41_GBR.gpkg"
+    # Use a city-level extract to speed up OSM ingestion; adjust if you regenerate
+    # a different bounding box. Expected file: london.osm.pbf
+    osm_pbf: "/urban-energy-trust-lakehouse/data/raw/osm/london.osm.pbf"
   
-  bronze_root: "data/lakehouse/bronze"
-  silver_root: "data/lakehouse/silver"
-  gold_root: "data/lakehouse/gold"
+  bronze_root: "/urban-energy-trust-lakehouse/lakehouse/bronze"
+  silver_root: "/urban-energy-trust-lakehouse/lakehouse/silver"
+  gold_root: "/urban-energy-trust-lakehouse/lakehouse/gold"
   
-  streaming_source: "data/streaming_source"
-  streaming_checkpoint: "data/streaming_checkpoint"
+  streaming_source: "/urban-energy-trust-lakehouse/streaming_source"
+  streaming_checkpoint: "/urban-energy-trust-lakehouse/streaming_checkpoint"
 
 tables:
   bronze:
@@ -51,6 +53,9 @@ tables:
     osm_buildings: "gold.osm_buildings"
     building_aggregations: "gold.building_aggregations"
     audit_log: "gold.audit_log"
+
+ingestion:
+  limit_blocks: 60  # if you want to limit the number of block files to process 
 
 quality:
   completeness:
@@ -105,7 +110,7 @@ ml:
       bagging_freq: 5
       verbose: 0
     
-    model_path: "models/quality_risk_model"
+    model_path: "/urban-energy-trust-lakehouse/models/quality_risk_model"
     model_version_prefix: "v"
 
 spark:
@@ -118,6 +123,13 @@ spark:
     auto_compact: true
   
   config:
+    spark.driver.memory: "4g"
+    spark.executor.memory: "4g"
+    spark.driver.maxResultSize: "2g"
+    spark.sql.shuffle.partitions: "16"
+    spark.default.parallelism: "16"
+    
+    spark.hadoop.fs.defaultFS: "hdfs://localhost:9000" # file:/// for local file system
     spark.sql.extensions: "io.delta.sql.DeltaSparkSessionExtension"
     spark.sql.catalog.spark_catalog: "org.apache.spark.sql.delta.catalog.DeltaCatalog"
     spark.databricks.delta.retentionDurationCheck.enabled: "false"
@@ -129,7 +141,7 @@ spark:
 
 streaming:
   trigger_interval: "30 seconds"
-  checkpoint_location: "data/streaming_checkpoint"
+  checkpoint_location: "/urban-energy-trust-lakehouse/streaming_checkpoint"
   max_files_per_trigger: 100
   processing_time: "30 seconds"
 

@@ -1,12 +1,28 @@
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
-    col, when, isnull, isnan, trim, upper, coalesce,
+    col, lit, when, isnull, isnan, trim, upper, coalesce,
     date_trunc, to_date, hour, dayofweek, dayofmonth, month, year,
     lag, lead, row_number, avg, stddev
 )
 from pyspark.sql.window import Window
 from typing import Dict
 import os
+
+
+def _join_path(base: str, *parts: str) -> str:
+    """
+    Join paths that work with both HDFS (hdfs://) and local filesystem.
+    os.path.join() doesn't work correctly for HDFS paths or absolute paths starting with /.
+    """
+    # Remove trailing slashes from base
+    base = base.rstrip('/')
+    # Join parts with single slash
+    result = base
+    for part in parts:
+        part = part.lstrip('/')
+        if part:
+            result = f"{result}/{part}"
+    return result
 
 
 def clean_halfhourly_consumption(
@@ -169,30 +185,32 @@ def run_silver_transformations(spark: SparkSession, config: Dict) -> Dict[str, D
     
     print("SILVER LAYER TRANSFORMATIONS")
     
-    os.makedirs(paths['silver_root'], exist_ok=True)
+    # Only create local directories; HDFS locations are managed by Spark/Hadoop
+    if paths['silver_root'].startswith("file://"):
+        os.makedirs(paths['silver_root'][len("file://"):], exist_ok=True)
     
     print("\n1. Cleaning half-hourly consumption...")
     results['halfhourly_consumption'] = clean_halfhourly_consumption(
         spark,
-        os.path.join(paths['bronze_root'], "halfhourly_consumption"),
-        os.path.join(paths['silver_root'], "halfhourly_consumption"),
+        _join_path(paths['bronze_root'], "halfhourly_consumption"),
+        _join_path(paths['silver_root'], "halfhourly_consumption"),
         config
     )
     
     print("\n2. Enriching with household metadata...")
     results['household_enriched'] = enrich_household_data(
         spark,
-        os.path.join(paths['silver_root'], "halfhourly_consumption"),
-        os.path.join(paths['bronze_root'], "household_info"),
-        os.path.join(paths['silver_root'], "household_enriched")
+        _join_path(paths['silver_root'], "halfhourly_consumption"),
+        _join_path(paths['bronze_root'], "household_info"),
+        _join_path(paths['silver_root'], "household_enriched")
     )
     
     print("\n3. Enriching with weather data...")
     results['weather_enriched'] = enrich_weather_data(
         spark,
-        os.path.join(paths['silver_root'], "halfhourly_consumption"),
-        os.path.join(paths['bronze_root'], "weather_hourly"),
-        os.path.join(paths['silver_root'], "weather_enriched")
+        _join_path(paths['silver_root'], "halfhourly_consumption"),
+        _join_path(paths['bronze_root'], "weather_hourly"),
+        _join_path(paths['silver_root'], "weather_enriched")
     )
     
     print("SILVER TRANSFORMATIONS COMPLETE")

@@ -11,24 +11,43 @@ from datetime import datetime
 
 from src.utils.config import load_config
 from src.utils.spark_session import get_or_create_spark_session
-from src.features.quality_features import prepare_ml_features
+from src.features.quality_features import prepare_ml_features, _join_path
 
 
 def load_latest_model(model_path: str) -> tuple:
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model path does not exist: {model_path}")
+    # Try multiple possible paths (absolute, relative, etc.)
+    possible_paths = [
+        model_path,  # Original path from config
+        model_path.lstrip("/"),  # Remove leading slash if absolute
+        os.path.join(os.getcwd(), model_path.lstrip("/")),  # Relative to current directory
+        "models/quality_risk_model"  # Fallback relative path
+    ]
     
-    model_files = [f for f in os.listdir(model_path) if f.startswith("model_") and f.endswith(".pkl")]
+    actual_path = None
+    for path in possible_paths:
+        if os.path.exists(path) and os.path.isdir(path):
+            actual_path = path
+            break
+    
+    if actual_path is None:
+        raise FileNotFoundError(
+            f"Model path does not exist. Tried: {possible_paths}\n"
+            f"Please check where the model was saved or update config.yaml model_path."
+        )
+    
+    print(f"   Using model path: {actual_path}")
+    
+    model_files = [f for f in os.listdir(actual_path) if f.startswith("model_") and f.endswith(".pkl")]
     if not model_files:
-        raise FileNotFoundError(f"No model files found in {model_path}")
+        raise FileNotFoundError(f"No model files found in {actual_path}")
     
     latest_model_file = sorted(model_files)[-1]
-    model_file_path = os.path.join(model_path, latest_model_file)
+    model_file_path = os.path.join(actual_path, latest_model_file)
     
     model = joblib.load(model_file_path)
     
     model_version = latest_model_file.replace("model_", "").replace(".pkl", "")
-    feature_info_file = os.path.join(model_path, f"feature_info_{model_version}.json")
+    feature_info_file = os.path.join(actual_path, f"feature_info_{model_version}.json")
     
     if os.path.exists(feature_info_file):
         with open(feature_info_file, 'r') as f:
@@ -120,7 +139,7 @@ def predict_quality_risk(
     
     print("\n5. Writing predictions to Gold...")
     paths = config['paths']
-    predictions_path = os.path.join(paths['gold_root'], "quality_risk_predictions")
+    predictions_path = _join_path(paths['gold_root'], "quality_risk_predictions")
     
     predictions_spark.write.format("delta").mode("overwrite").option("mergeSchema", "true").save(predictions_path)
     

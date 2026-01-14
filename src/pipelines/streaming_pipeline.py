@@ -20,10 +20,13 @@ def run_streaming_pipeline(spark: SparkSession, config: Dict) -> None:
     print()
     
     streaming_source = paths.get('streaming_source', 'data/streaming_source')
-    os.makedirs(streaming_source, exist_ok=True)
-    
     checkpoint_location = paths.get('streaming_checkpoint', 'data/streaming_checkpoint')
-    os.makedirs(checkpoint_location, exist_ok=True)
+    
+    # Only create local directories; HDFS locations are managed by Spark/Hadoop
+    if streaming_source.startswith("file://"):
+        os.makedirs(streaming_source[len("file://"):], exist_ok=True)
+    if checkpoint_location.startswith("file://"):
+        os.makedirs(checkpoint_location[len("file://"):], exist_ok=True)
     
     bronze_target = os.path.join(paths['bronze_root'], "halfhourly_consumption")
     

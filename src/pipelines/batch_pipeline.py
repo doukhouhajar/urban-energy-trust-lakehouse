@@ -23,6 +23,22 @@ from src.governance.audit_log import (
 from src.geospatial.spatial_operations import create_building_aggregations
 
 
+def _join_path(base: str, *parts: str) -> str:
+    """
+    Join paths that work with both HDFS (hdfs://) and local filesystem.
+    os.path.join() doesn't work correctly for HDFS paths or absolute paths starting with /.
+    """
+    # Remove trailing slashes from base
+    base = base.rstrip('/')
+    # Join parts with single slash
+    result = base
+    for part in parts:
+        part = part.lstrip('/')
+        if part:
+            result = f"{result}/{part}"
+    return result
+
+
 def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
     paths = config['paths']
     pipeline_name = "batch_pipeline"
@@ -42,7 +58,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         bronze_results = run_bronze_ingestion(spark, config)
         
         for key, df in bronze_results.items():
-            table_path = os.path.join(paths['bronze_root'], key)
+            table_path = _join_path(paths['bronze_root'], key)
             row_counts[table_path] = df.count()
             input_versions[table_path] = get_table_version(spark, table_path)
             output_paths[f"bronze_{key}"] = table_path
@@ -53,7 +69,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         try:
             gadm_results = run_gadm_ingestion(spark, config)
             for key, df in gadm_results.items():
-                table_path = os.path.join(paths['bronze_root'], key)
+                table_path = _join_path(paths['bronze_root'], key)
                 row_counts[table_path] = df.count()
                 output_paths[f"geospatial_{key}"] = table_path
         except Exception as e:
@@ -64,7 +80,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         try:
             osm_results = run_osm_ingestion(spark, config)
         except Exception as e:
-            print(f"Warning: OSM ingestion failed: {e}")
+            print(f"Warning: OSM ingestion failed: {e}") ######
             print("Continuing without OSM data...")
             osm_results = None
         
@@ -74,7 +90,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         silver_results = run_silver_transformations(spark, config)
         
         for key, df in silver_results.items():
-            table_path = os.path.join(paths['silver_root'], key)
+            table_path = _join_path(paths['silver_root'], key)
             row_counts[table_path] = df.count()
             output_paths[f"silver_{key}"] = table_path
         
@@ -82,7 +98,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         
         print("STEP 4: DATA QUALITY CHECKS")
         
-        silver_consumption_path = os.path.join(paths['silver_root'], "household_enriched")
+        silver_consumption_path = _join_path(paths['silver_root'], "household_enriched")
         silver_df = spark.read.format("delta").load(silver_consumption_path)
         
         print("Running completeness checks...")
@@ -137,10 +153,14 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
             config
         )
         
-        quality_scores_path = os.path.join(paths['gold_root'], "quality_scores")
-        quality_incidents_path = os.path.join(paths['gold_root'], "quality_incidents")
+        quality_scores_path = _join_path(paths['gold_root'], "quality_scores")
+        quality_incidents_path = _join_path(paths['gold_root'], "quality_incidents")
         
-        os.makedirs(paths['gold_root'], exist_ok=True)
+        gold_root = paths['gold_root']
+        # Only create local directories; HDFS locations are managed by Spark/Hadoop
+        if gold_root.startswith("file://"):
+            local_gold_root = gold_root[len("file://"):]
+            os.makedirs(local_gold_root, exist_ok=True)
         
         write_quality_scores(quality_scores, quality_scores_path, mode="overwrite")
         write_quality_incidents(all_incidents, quality_incidents_path, mode="overwrite")
@@ -162,7 +182,7 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
         building_agg = create_building_aggregations(spark, config)
         
         for key, df in gold_results.items():
-            table_path = os.path.join(paths['gold_root'], key)
+            table_path = _join_path(paths['gold_root'], key)
             row_counts[table_path] = df.count()
             output_paths[f"gold_{key}"] = table_path
         
@@ -174,13 +194,12 @@ def run_batch_pipeline(spark: SparkSession, config: Dict) -> bool:
     except Exception as e:
         status = "FAILED"
         error_message = str(e)
-        print("\n" + "=" * 80)
         print(f"PIPELINE FAILED: {error_message}")
         raise
     
     finally:
         print("\nWriting audit log...")
-        audit_log_path = os.path.join(paths['gold_root'], "audit_log")
+        audit_log_path = _join_path(paths['gold_root'], "audit_log")
         log_pipeline_run(
             spark,
             audit_log_path,

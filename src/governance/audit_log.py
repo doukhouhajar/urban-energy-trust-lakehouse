@@ -4,6 +4,7 @@ from typing import Dict, Optional
 from delta.tables import DeltaTable
 import os
 import json
+from datetime import datetime
 
 
 def log_pipeline_run(
@@ -19,15 +20,13 @@ def log_pipeline_run(
     status: str = "SUCCESS",
     error_message: Optional[str] = None
 ):
-
-    from datetime import datetime
     current_ts = datetime.now()
-    
+
     audit_entry = {
         "pipeline_name": pipeline_name,
         "run_timestamp": current_ts,
         "status": status,
-        "error_message": error_message if error_message else None,
+        "error_message": error_message,
         "config_snapshot": json.dumps(config),
         "input_versions": json.dumps(input_versions or {}),
         "output_paths": json.dumps(output_paths or {}),
@@ -35,25 +34,53 @@ def log_pipeline_run(
         "rejected_rows": rejected_rows or 0,
         "quality_score_summary": json.dumps(quality_score_summary or {})
     }
-    
-    audit_df = spark.createDataFrame([audit_entry], schema="""
-        pipeline_name STRING,
-        run_timestamp TIMESTAMP,
-        status STRING,
-        error_message STRING,
-        config_snapshot STRING,
-        input_versions STRING,
-        output_paths STRING,
-        row_counts STRING,
-        rejected_rows BIGINT,
-        quality_score_summary STRING
-    """)
-    
-    if os.path.exists(audit_log_path) and DeltaTable.isDeltaTable(spark, audit_log_path):
-        audit_df.write.format("delta").mode("append").save(audit_log_path)
-    else:
-        os.makedirs(os.path.dirname(audit_log_path), exist_ok=True)
-        audit_df.write.format("delta").mode("overwrite").save(audit_log_path)
+
+    try:
+        _ = spark.sparkContext
+    except Exception:
+        # Spark is not usable → do NOT crash the pipeline
+        print("WARNING: Spark unavailable, audit log skipped.")
+        return
+
+    audit_df = spark.createDataFrame(
+        [audit_entry],
+        schema="""
+            pipeline_name STRING,
+            run_timestamp TIMESTAMP,
+            status STRING,
+            error_message STRING,
+            config_snapshot STRING,
+            input_versions STRING,
+            output_paths STRING,
+            row_counts STRING,
+            rejected_rows BIGINT,
+            quality_score_summary STRING
+        """
+    )
+
+    mode = "overwrite"
+    try:
+        if DeltaTable.isDeltaTable(spark, audit_log_path):
+            mode = "append"
+    except Exception:
+        # If Spark/Delta is unstable, default to overwrite
+        mode = "overwrite"
+
+
+    # Only create directories for local filesystem paths
+    # HDFS paths and absolute paths starting with / are managed by Spark/Hadoop
+    if audit_log_path.startswith("file://"):
+        parent_dir = audit_log_path[len("file://"):]
+        parent_dir = os.path.dirname(parent_dir)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+    elif not audit_log_path.startswith("hdfs://") and not audit_log_path.startswith("/"):
+        # Only try to create if it's a relative path
+        parent_dir = os.path.dirname(audit_log_path)
+        if parent_dir and not parent_dir.startswith("/"):
+            os.makedirs(parent_dir, exist_ok=True)
+    audit_df.write.format("delta").mode(mode).save(audit_log_path)
+
 
 
 def get_table_row_count(spark: SparkSession, table_path: str) -> int:
